@@ -1,0 +1,33 @@
+servers:
+  - host: "192.168.25.212"
+    port: 22
+    username: "root"
+    password: "PlatForm12#$"
+  - host: "192.168.25.213"
+    port: 22
+    username: "root"
+    password: "PlatForm12#$"
+  - host: "192.168.25.214"
+    port: 22
+    username: "root"
+    password: "PlatForm12#$"
+  - host: "192.168.25.215"
+    port: 22
+    username: "root"
+    password: "PlatForm12#$"
+  - host: "192.168.25.216"
+    port: 22
+    username: "root"
+    password: "PlatForm12#$"
+  - host: "192.168.25.217"
+    port: 22
+    username: "root"
+    password: "PlatForm12#$"
+  - host: "192.168.25.218"
+    port: 22
+    username: "root"
+    password: "PlatForm12#$"
+
+feishu:
+  app_id: "cli_a93affd667789bcd"
+  app_secret: "xZVeemffyrXuEuGZFgRJcagXYfk6vSPK"
