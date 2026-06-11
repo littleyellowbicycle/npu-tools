@@ -23,6 +23,10 @@ from services.develop import (
     sync_directory,
     start_watcher,
     stop_watcher,
+    get_script_log,
+    list_logs,
+    list_processes,
+    stop_script,
 )
 
 log = logging.getLogger("NPU-Tools.Channel.MCP")
@@ -56,6 +60,87 @@ def _format_results(result):
     return '\n'.join(lines)
 
 
+def _format_launch_result(result):
+    lines = []
+    lines.append(f"启动脚本: {result.get('results', [{}])[0].get('script', 'N/A')}")
+    lines.append(f"成功: {result.get('success_count', 'N/A')}/{result.get('total', 'N/A')}")
+    lines.append("")
+    lines.append("各节点详情:")
+    for r in result.get('results', []):
+        host = r.get('host', 'unknown')
+        pid = r.get('pid')
+        log_file = r.get('log_file', '')
+        if r.get('success'):
+            lines.append(f"  ✅ {host}: PID={pid}")
+            lines.append(f"     日志: {log_file}")
+        else:
+            error = r.get('error', '未知错误')
+            lines.append(f"  ❌ {host}: 失败 - {error}")
+    lines.append("")
+    lines.append("💡 使用 get_script_log 查看日志输出，使用 list_processes 查看运行中的进程")
+    return '\n'.join(lines)
+
+
+def _format_log_result(result):
+    lines = []
+    lines.append(f"日志文件: {result.get('log_file', 'N/A')}")
+    lines.append(f"显示最后 {result.get('lines', 'N/A')} 行")
+    lines.append("=" * 60)
+    for r in result.get('results', []):
+        host = r.get('host', 'unknown')
+        output = r.get('output', '')
+        if output:
+            lines.append(f"--- {host} ---")
+            lines.append(output)
+        else:
+            error = r.get('error', '')
+            if error:
+                lines.append(f"--- {host}: 读取失败 - {error} ---")
+            else:
+                lines.append(f"--- {host}: 暂无输出 ---")
+    return '\n'.join(lines)
+
+
+def _format_processes_result(result):
+    lines = []
+    keyword = result.get('keyword')
+    if keyword:
+        lines.append(f"进程过滤: {keyword}")
+    else:
+        lines.append("所有 Python3 进程")
+    lines.append("=" * 60)
+    for r in result.get('results', []):
+        host = r.get('host', 'unknown')
+        processes = r.get('processes', [])
+        lines.append(f"--- {host} ({len(processes)} 个进程) ---")
+        if processes:
+            for p in processes:
+                lines.append(f"  PID={p['pid']}  CPU={p['cpu']}%  MEM={p['mem']}%  {p['command']}")
+        else:
+            lines.append("  无匹配进程")
+    return '\n'.join(lines)
+
+
+def _format_list_logs_result(result):
+    lines = []
+    keyword = result.get('keyword')
+    if keyword:
+        lines.append(f"日志过滤: {keyword}")
+    else:
+        lines.append("所有日志文件")
+    lines.append("=" * 60)
+    for r in result.get('results', []):
+        host = r.get('host', 'unknown')
+        log_files = r.get('log_files', [])
+        lines.append(f"--- {host} ({len(log_files)} 个文件) ---")
+        if log_files:
+            for lf in log_files:
+                lines.append(f"  {lf['date']}  {lf['size']:>8}  {lf['path']}")
+        else:
+            lines.append("  无日志文件")
+    return '\n'.join(lines)
+
+
 @server.list_tools()
 async def list_tools() -> list[Tool]:
     return [
@@ -76,7 +161,7 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="launch_script",
-            description="在指定节点上远程启动同一个脚本。脚本需已存在于远程节点的部署目录中。",
+            description="在指定节点上后台启动脚本（nohup），输出重定向到远程日志文件。返回进程 PID 和日志文件路径，可用 get_script_log 查看输出。",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -93,11 +178,6 @@ async def list_tools() -> list[Tool]:
                         "type": "string",
                         "description": "传递给脚本的命令行参数",
                         "default": ""
-                    },
-                    "timeout": {
-                        "type": "integer",
-                        "description": "命令执行超时时间（秒）",
-                        "default": 30
                     }
                 },
                 "required": ["script_path"]
@@ -179,6 +259,87 @@ async def list_tools() -> list[Tool]:
                 "required": []
             }
         ),
+        Tool(
+            name="get_script_log",
+            description="查看远程节点上脚本的运行日志。使用 launch_script 启动脚本后会返回日志文件路径，用此工具查看输出。",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "log_file": {
+                        "type": "string",
+                        "description": "远程日志文件路径（launch_script 返回的 log_file 字段）"
+                    },
+                    "hosts": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "目标服务器 IP 列表，为空则使用配置中的 deploy_nodes"
+                    },
+                    "lines": {
+                        "type": "integer",
+                        "description": "显示最后 N 行日志",
+                        "default": 50
+                    }
+                },
+                "required": ["log_file"]
+            }
+        ),
+        Tool(
+            name="list_logs",
+            description="列出远程节点上的日志文件。支持按脚本名筛选，按时间倒序排列。",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "hosts": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "目标服务器 IP 列表，为空则使用配置中的 deploy_nodes"
+                    },
+                    "keyword": {
+                        "type": "string",
+                        "description": "日志文件名过滤关键字（如脚本名 'train'），为空则列出所有日志"
+                    }
+                },
+                "required": []
+            }
+        ),
+        Tool(
+            name="list_processes",
+            description="列出远程节点上正在运行的 Python 进程。可按关键字筛选。",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "hosts": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "目标服务器 IP 列表，为空则使用配置中的 deploy_nodes"
+                    },
+                    "keyword": {
+                        "type": "string",
+                        "description": "进程过滤关键字（如脚本名 'train.py'），为空则列出所有 Python 进程"
+                    }
+                },
+                "required": []
+            }
+        ),
+        Tool(
+            name="stop_script",
+            description="终止远程节点上指定 PID 的进程。",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "pid": {
+                        "type": "string",
+                        "description": "要终止的进程 PID（可通过 list_processes 获取）"
+                    },
+                    "hosts": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "目标服务器 IP 列表，为空则使用配置中的 deploy_nodes"
+                    }
+                },
+                "required": ["pid"]
+            }
+        ),
     ]
 
 
@@ -197,9 +358,8 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             script_path = arguments['script_path']
             hosts = arguments.get('hosts')
             args = arguments.get('args', '')
-            timeout = arguments.get('timeout', 30)
-            result = launch_script(script_path, hosts, args, timeout)
-            return [TextContent(type="text", text=_format_results(result))]
+            result = launch_script(script_path, hosts, args)
+            return [TextContent(type="text", text=_format_launch_result(result))]
 
         elif name == "sync_script":
             script_path = arguments['script_path']
@@ -237,6 +397,31 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
                 lines.append(f"部署节点: {', '.join(deploy_nodes)}")
 
             return [TextContent(type="text", text='\n'.join(lines))]
+
+        elif name == "get_script_log":
+            log_file = arguments['log_file']
+            hosts = arguments.get('hosts')
+            lines_count = arguments.get('lines', 50)
+            result = get_script_log(log_file, hosts, lines_count)
+            return [TextContent(type="text", text=_format_log_result(result))]
+
+        elif name == "list_logs":
+            hosts = arguments.get('hosts')
+            keyword = arguments.get('keyword')
+            result = list_logs(hosts, keyword)
+            return [TextContent(type="text", text=_format_list_logs_result(result))]
+
+        elif name == "list_processes":
+            hosts = arguments.get('hosts')
+            keyword = arguments.get('keyword')
+            result = list_processes(hosts, keyword)
+            return [TextContent(type="text", text=_format_processes_result(result))]
+
+        elif name == "stop_script":
+            pid = arguments['pid']
+            hosts = arguments.get('hosts')
+            result = stop_script(pid, hosts)
+            return [TextContent(type="text", text=_format_results(result))]
 
         else:
             return [TextContent(type="text", text=f"未知工具: {name}")]

@@ -12,7 +12,7 @@
 
 > 管理集群不应该比使用集群更累。
 
-NPU 集群通常有多个节点，每次查状态要逐台 SSH、部署脚本要逐台上传、改了代码要逐台同步。NPU Tools 把这些重复操作变成一句话的事——通过 MCP 让 AI 直接操作集群，通过飞书让手机也能查状态，通过文件监控让开发时自动同步。
+跑大模型推理服务通常要使用多个npu节点，每次查状态要逐台 SSH、部署脚本要逐台上传、改了代码要逐台同步。NPU Tools 把这些重复操作变成一句话的事——通过 MCP 让 AI 直接操作集群，通过飞书让手机也能查状态，通过文件监控让开发时自动同步。
 
 ---
 
@@ -24,7 +24,7 @@ SSH 并发查询多台服务器 `npu-smi info`，智能解析输出，精确区�
 
 ### 🚀 脚本远程启动
 
-一条命令在指定节点上同时启动同一个脚本，并发执行、结果汇总，无需逐台 SSH。
+一条命令在指定节点上后台启动同一个脚本（nohup），输出自动重定向到日志文件。随时查看日志回显、列出运行进程、终止指定进程。
 
 ### 🔄 脚本同步与自动监控
 
@@ -234,7 +234,11 @@ cwd = "d:/project/npu-tools"
 | 工具 | 说明 |
 |------|------|
 | `query_npu_status` | 查询 NPU 状态（空闲/占用卡） |
-| `launch_script` | 在指定节点远程启动脚本 |
+| `launch_script` | 后台启动脚本（nohup），返回 PID 和日志路径 |
+| `get_script_log` | 查看脚本运行日志（tail） |
+| `list_logs` | 列出远程节点上的日志文件，支持按脚本名筛选 |
+| `list_processes` | 列出远程节点上运行的 Python 进程 |
+| `stop_script` | 终止指定 PID 的进程 |
 | `sync_script` | 同步单个脚本到节点 |
 | `sync_directory` | 批量同步目录下所有脚本 |
 | `start_file_watcher` | 启动文件变更自动同步 |
@@ -246,7 +250,11 @@ cwd = "d:/project/npu-tools"
 配置完成后，直接在对话中使用：
 
 - "查询 NPU 状态" → 查询所有节点
-- "在 212-215 上运行 train.py" → 远程启动脚本
+- "在 212-215 上运行 train.py" → 后台启动脚本，返回 PID 和日志路径
+- "查看 train.py 的日志" → 查看运行输出
+- "列出所有日志文件" → 查看历史日志
+- "列出所有运行中的 Python 进程" → 查看进程状态
+- "停止 PID 12345" → 终止进程
 - "同步 train.py 到服务器" → 上传脚本
 - "启动文件监控" → 自动同步变更
 
@@ -356,8 +364,11 @@ Channel → Service → Driver → Config
 
 ```
 对话: "在所有节点上运行 train.py"
-  → MCP sync_script  (上传脚本)
-  → MCP launch_script (远程执行)
+  → MCP sync_script    (上传脚本)
+  → MCP launch_script  (后台启动，返回 PID 和日志路径)
+  → 对话: "查看日志"   → MCP get_script_log (查看运行输出)
+  → 对话: "列出进程"   → MCP list_processes (查看进程状态)
+  → 对话: "停止训练"   → MCP stop_script    (终止进程)
 ```
 
 ### 开发时自动同步
@@ -367,7 +378,8 @@ Channel → Service → Driver → Config
   → MCP start_file_watcher
   → 修改本地代码 → 自动同步到节点
   → 对话: "运行 train.py" → MCP launch_script
-  → 对话: "停止监控" → MCP stop_file_watcher
+  → 对话: "查看日志"     → MCP get_script_log
+  → 对话: "停止监控"     → MCP stop_file_watcher
 ```
 
 ---
