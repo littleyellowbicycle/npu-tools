@@ -1,44 +1,77 @@
+docker_default:
+  container: "sglang-0610"
+  image: "61036f139a18"
+  workdir: "/root/ott13"
+  shm_size: "512g"
+  privileged: true
+  network_host: true
+  hostname: "ubuntu-docker"
+  entrypoint: "bash"
+  volumes:
+    - "/mnt:/mnt"
+    - "/home:/home"
+    - "/data:/data"
+    - "/root/ott13:/root/ott13"
+    - "/var/queue_schedule:/var/queue_schedule"
+    - "/etc/ascend_install.info:/etc/ascend_install.info"
+    - "/usr/local/sbin:/usr/local/sbin"
+    - "/usr/local/Ascend/driver:/usr/local/Ascend/driver"
+    - "/usr/local/Ascend/firmware:/usr/local/Ascend/firmware"
+  devices:
+    - "/dev/davinci0:/dev/davinci0"
+    - "/dev/davinci1:/dev/davinci1"
+    - "/dev/davinci2:/dev/davinci2"
+    - "/dev/davinci3:/dev/davinci3"
+    - "/dev/davinci4:/dev/davinci4"
+    - "/dev/davinci5:/dev/davinci5"
+    - "/dev/davinci6:/dev/davinci6"
+    - "/dev/davinci7:/dev/davinci7"
+    - "/dev/davinci0:/dev/davinci8"
+    - "/dev/davinci1:/dev/davinci9"
+    - "/dev/davinci2:/dev/davinci10"
+    - "/dev/davinci3:/dev/davinci11"
+    - "/dev/davinci4:/dev/davinci12"
+    - "/dev/davinci5:/dev/davinci13"
+    - "/dev/davinci6:/dev/davinci14"
+    - "/dev/davinci7:/dev/davinci15"
+    - "/dev/davinci_manager:/dev/davinci_manager"
+    - "/dev/hisi_hdc:/dev/hisi_hdc"
+
 servers:
   - host: "192.168.25.212"
     port: 22
     username: "root"
     password: "YOUR_SERVER_PASSWORD"
-    docker:
-      container: "npu-train"
-      workdir: "/workspace"
-      create_cmd: "docker run -d --name npu-train --device=/dev/davinci0 --device=/dev/davinci_manager --device=/dev/devmm_svm --device=/dev/hisi_hdc -v /usr/local/dcmi:/usr/local/dcmi -v /usr/local/bin/npu-smi:/usr/local/bin/npu-smi -v /usr/local/Ascend/driver/lib64:/usr/local/Ascend/driver/lib64 -v /opt/npu-tools:/workspace -w /workspace ascend-train:latest sleep infinity"
+    docker: true
+
   - host: "192.168.25.213"
     port: 22
     username: "root"
     password: "YOUR_SERVER_PASSWORD"
-    docker:
-      container: "npu-train"
-      workdir: "/workspace"
-      create_cmd: "docker run -d --name npu-train --device=/dev/davinci0 --device=/dev/davinci_manager --device=/dev/devmm_svm --device=/dev/hisi_hdc -v /usr/local/dcmi:/usr/local/dcmi -v /usr/local/bin/npu-smi:/usr/local/bin/npu-smi -v /usr/local/Ascend/driver/lib64:/usr/local/Ascend/driver/lib64 -v /opt/npu-tools:/workspace -w /workspace ascend-train:latest sleep infinity"
+    docker: true
+
   - host: "192.168.25.214"
     port: 22
     username: "root"
     password: "YOUR_SERVER_PASSWORD"
-    docker:
-      container: "npu-train"
-      workdir: "/workspace"
-      create_cmd: "docker run -d --name npu-train --device=/dev/davinci0 --device=/dev/davinci_manager --device=/dev/devmm_svm --device=/dev/hisi_hdc -v /usr/local/dcmi:/usr/local/dcmi -v /usr/local/bin/npu-smi:/usr/local/bin/npu-smi -v /usr/local/Ascend/driver/lib64:/usr/local/Ascend/driver/lib64 -v /opt/npu-tools:/workspace -w /workspace ascend-train:latest sleep infinity"
+    docker: true
+
   - host: "192.168.25.215"
     port: 22
     username: "root"
     password: "YOUR_SERVER_PASSWORD"
-    docker:
-      container: "npu-train"
-      workdir: "/workspace"
-      create_cmd: "docker run -d --name npu-train --device=/dev/davinci0 --device=/dev/davinci_manager --device=/dev/devmm_svm --device=/dev/hisi_hdc -v /usr/local/dcmi:/usr/local/dcmi -v /usr/local/bin/npu-smi:/usr/local/bin/npu-smi -v /usr/local/Ascend/driver/lib64:/usr/local/Ascend/driver/lib64 -v /opt/npu-tools:/workspace -w /workspace ascend-train:latest sleep infinity"
+    docker: true
+
   - host: "192.168.25.216"
     port: 22
     username: "root"
     password: "YOUR_SERVER_PASSWORD"
+
   - host: "192.168.25.217"
     port: 22
     username: "root"
     password: "YOUR_SERVER_PASSWORD"
+
   - host: "192.168.25.218"
     port: 22
     username: "root"

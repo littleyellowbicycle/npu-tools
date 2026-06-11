@@ -7,7 +7,7 @@ import logging
 import threading
 import concurrent.futures
 
-from config import filter_servers, get_deploy_nodes, get_remote_dir, get_watch_dir, get_docker_config
+from config import filter_servers, get_deploy_nodes, get_remote_dir, get_watch_dir, get_docker_config, build_docker_create_cmd
 from services.npu_service import query_npu_status
 from driver.ssh_driver import exec_command, upload_file
 
@@ -411,12 +411,17 @@ def setup_docker(hosts=None):
         futures = {}
         for s in target_servers:
             docker = get_docker_config(s)
-            if not docker or not docker.get('create_cmd'):
+            if not docker or not docker.get('container'):
+                futures[executor.submit(_noop_no_docker, s)] = s
+                continue
+
+            create_cmd = build_docker_create_cmd(s)
+            if not create_cmd:
                 futures[executor.submit(_noop_no_docker, s)] = s
                 continue
 
             check_cmd = f"docker ps -q -f name={docker['container']}"
-            futures[executor.submit(_setup_single, s, docker, check_cmd)] = s
+            futures[executor.submit(_setup_single, s, docker, check_cmd, create_cmd)] = s
 
         for f in concurrent.futures.as_completed(futures):
             try:
@@ -440,7 +445,7 @@ def setup_docker(hosts=None):
     }
 
 
-def _setup_single(server, docker, check_cmd):
+def _setup_single(server, docker, check_cmd, create_cmd):
     host = server['host']
     container = docker.get('container', '')
 
@@ -454,7 +459,6 @@ def _setup_single(server, docker, check_cmd):
             'output': f'容器 {container} 已在运行'
         }
 
-    create_cmd = docker['create_cmd']
     r = exec_command(server, create_cmd, 30)
     container_id = r.get('output', '').strip()[:12] if r['success'] else ''
     return {

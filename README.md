@@ -356,22 +356,48 @@ python npu_status_query.py
 编辑 `config.yaml`：
 
 ```yaml
-# 服务器列表（SSH 连接信息 + Docker 配置）
+# Docker 默认配置（所有 docker: true 的节点共享）
+docker_default:
+  container: "sglang-0610"             # 容器名
+  image: "61036f139a18"                # 镜像 ID 或名称
+  workdir: "/root/ott13"               # 容器内工作目录（挂载点）
+  shm_size: "512g"                     # 共享内存
+  privileged: true                     # 特权模式
+  network_host: true                   # 主机网络
+  hostname: "ubuntu-docker"            # 容器主机名
+  entrypoint: "bash"                   # 入口点
+  volumes:                             # 挂载列表
+    - "/mnt:/mnt"
+    - "/home:/home"
+    - "/data:/data"
+    - "/root/ott13:/root/ott13"
+    - "/usr/local/Ascend/driver:/usr/local/Ascend/driver"
+  devices:                             # 设备映射
+    - "/dev/davinci0:/dev/davinci0"
+    - "/dev/davinci_manager:/dev/davinci_manager"
+    - "/dev/hisi_hdc:/dev/hisi_hdc"
+
+# 服务器列表
 servers:
   - host: "192.168.25.212"
     port: 22
     username: "root"
     password: "YOUR_SERVER_PASSWORD"
-    docker:                              # 可选：Docker 容器配置
-      container: "npu-train"             #   容器名
-      workdir: "/workspace"              #   容器内工作目录（挂载点）
-      create_cmd: "docker run -d --name npu-train --device=/dev/davinci0 ... sleep infinity"
+    docker: true                       # 使用 docker_default 配置
+
+  - host: "192.168.25.213"
+    port: 22
+    username: "root"
+    password: "YOUR_SERVER_PASSWORD"
+    docker:                            # 覆盖部分默认值
+      container: "custom-name"
+      image: "my-image:v2"
 
   - host: "192.168.25.216"
     port: 22
     username: "root"
     password: "YOUR_SERVER_PASSWORD"
-    # 无 docker 配置 = 直接在宿主机执行
+    # 无 docker = 直接在宿主机执行
 
 # 飞书机器人配置（仅飞书模式需要）
 feishu:
@@ -391,13 +417,26 @@ script_deploy:
 
 ### Docker 配置说明
 
+| 写法 | 说明 |
+|------|------|
+| `docker: true` | 使用 `docker_default` 全部配置 |
+| `docker: { container: "xxx" }` | 继承 `docker_default`，覆盖指定字段 |
+| 无 `docker` 字段 | 不使用 Docker，直接在宿主机执行 |
+
 | 字段 | 说明 |
 |------|------|
-| `docker.container` | 容器名，用于 `docker exec` 执行命令 |
-| `docker.workdir` | 容器内工作目录，需与 `create_cmd` 中的 `-v` 挂载对应 |
-| `docker.create_cmd` | 完整的 `docker run` 命令，`setup_docker` 时执行 |
+| `container` | 容器名，用于 `docker exec` 执行命令 |
+| `image` | 镜像 ID 或名称，如 `61036f139a18` 或 `ascend-train:latest` |
+| `workdir` | 容器内工作目录，需与 `volumes` 中的挂载对应 |
+| `volumes` | 宿主机到容器的目录映射列表 |
+| `devices` | NPU 设备映射列表 |
+| `shm_size` | 共享内存大小（训练任务建议 512g） |
+| `privileged` | 特权模式（NPU 访问通常需要） |
+| `network_host` | 使用主机网络 |
+| `entrypoint` | 容器入口点 |
+| `create_cmd` | 完整 `docker run` 命令（优先级最高，设置后忽略其他字段） |
 
-**关键**：`create_cmd` 中的 `-v` 挂载必须将宿主机 `remote_dir`（如 `/opt/npu-tools`）映射到容器 `workdir`（如 `/workspace`），这样同步到宿主机的文件才能在容器内访问。
+**关键**：`volumes` 中必须将宿主机 `remote_dir`（如 `/opt/npu-tools`）映射到容器 `workdir`（如 `/root/ott13`），这样同步到宿主机的文件才能在容器内访问。
 
 ---
 
