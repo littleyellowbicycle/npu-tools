@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-NPU 工具入口（向后兼容）
-  --local  : 本地模式，查询 NPU 状态并输出到 stdout
-  默认     : 启动飞书 WebSocket 机器人
-"""
 
 import sys
 import os
@@ -17,21 +12,31 @@ def main():
     parser = argparse.ArgumentParser(
         description='NPU 工具入口',
         epilog='示例:\n'
-               '  python npu_status_query.py             # 启动飞书 WebSocket 机器人\n'
-               '  python npu_status_query.py --local      # 本地模式：查询并输出到 stdout',
+               '  python npu_status_query.py                  # 启动飞书 WebSocket 机器人\n'
+               '  python npu_status_query.py --local           # 本地模式：查询 NPU 状态\n'
+               '  python npu_status_query.py --local query     # 同上\n'
+               '  python npu_status_query.py --local launch train.py\n'
+               '  python npu_status_query.py --local ps\n'
+               '  python npu_status_query.py --local logs',
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
         '--local',
         action='store_true',
         default=False,
-        help='本地模式：查询所有服务器 NPU 状态并输出到 stdout，不连接飞书',
+        help='本地模式：使用 CLI 管理集群',
+    )
+    parser.add_argument(
+        'cli_args',
+        nargs='*',
+        help='CLI 子命令及参数（仅 --local 模式有效）',
     )
     args = parser.parse_args()
 
     if args.local:
-        from channel.cli import local_mode
-        local_mode()
+        from channel.cli import main as cli_main
+        sys.argv = ['npu'] + args.cli_args
+        cli_main()
     else:
         from channel.feishu import main as feishu_main
         feishu_main()

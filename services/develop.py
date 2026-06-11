@@ -7,7 +7,8 @@ import logging
 import threading
 import concurrent.futures
 
-from config import filter_servers, get_deploy_nodes, get_remote_dir, get_watch_dir
+from config import filter_servers, get_deploy_nodes, get_remote_dir, get_watch_dir, get_docker_config
+from services.npu_service import query_npu_status
 from driver.ssh_driver import exec_command, upload_file
 
 log = logging.getLogger("NPU-Tools.Service.Develop")
@@ -16,6 +17,27 @@ _watcher_thread = None
 _watcher_stop_event = threading.Event()
 
 LOG_DIR_NAME = "logs"
+
+
+def _docker_exec_prefix(server):
+    docker = get_docker_config(server)
+    if not docker or not docker.get('container'):
+        return None
+    return f"docker exec {docker['container']}"
+
+
+def _container_workdir(server):
+    docker = get_docker_config(server)
+    if docker and docker.get('workdir'):
+        return docker['workdir']
+    return get_remote_dir()
+
+
+def _wrap_command(server, command):
+    prefix = _docker_exec_prefix(server)
+    if prefix:
+        return f"{prefix} bash -c '{command}'"
+    return command
 
 
 def launch_script(script_path, hosts=None, args=None):
@@ -32,11 +54,38 @@ def launch_script(script_path, hosts=None, args=None):
     def _launch_on_server(server):
         host_ip = server['host'].replace('.', '-')
         log_file = os.path.join(log_dir, f"{os.path.splitext(script_name)[0]}_{host_ip}_{timestamp}.log").replace('\\', '/')
-        command = f'mkdir -p {log_dir} && nohup python3 {remote_script_path}'
-        if args:
-            command += f' {args}'
-        command += f' > {log_file} 2>&1 & echo $!'
-        r = exec_command(server, command, 10)
+
+        docker = get_docker_config(server)
+        if docker and docker.get('container'):
+            workdir = docker.get('workdir', remote_dir)
+            container_script = os.path.join(workdir, script_name).replace('\\', '/')
+            container_log_dir = os.path.join(workdir, LOG_DIR_NAME).replace('\\', '/')
+            container_log = os.path.join(container_log_dir, f"{os.path.splitext(script_name)[0]}_{host_ip}_{timestamp}.log").replace('\\', '/')
+
+            mkdir_cmd = f"mkdir -p {log_dir}"
+            r = exec_command(server, mkdir_cmd, 10)
+            if not r['success']:
+                r['script'] = script_name
+                r['pid'] = None
+                r['log_file'] = log_file
+                r['success'] = False
+                r['error'] = f"创建日志目录失败: {r.get('error', '')}"
+                return r
+
+            inner_cmd = f"mkdir -p {container_log_dir} && nohup python3 {container_script}"
+            if args:
+                inner_cmd += f' {args}'
+            inner_cmd += f' > {container_log} 2>&1 & echo $!'
+
+            command = f"docker exec {docker['container']} bash -c '{inner_cmd}'"
+            r = exec_command(server, command, 15)
+        else:
+            command = f'mkdir -p {log_dir} && nohup python3 {remote_script_path}'
+            if args:
+                command += f' {args}'
+            command += f' > {log_file} 2>&1 & echo $!'
+            r = exec_command(server, command, 10)
+
         pid = r.get('output', '').strip().split('\n')[-1].strip()
         r['pid'] = pid if pid.isdigit() else None
         r['log_file'] = log_file
@@ -264,35 +313,28 @@ def list_logs(hosts=None, keyword=None):
     }
 
 
-def _parse_ls_output(output):
-    log_files = []
-    for line in output.strip().split('\n'):
-        if not line.strip():
-            continue
-        parts = line.split(None, 8)
-        if len(parts) >= 9:
-            log_files.append({
-                'permissions': parts[0],
-                'size': parts[4],
-                'date': f"{parts[5]} {parts[6]} {parts[7]}",
-                'path': parts[8]
-            })
-    return log_files
-
-
 def list_processes(hosts=None, keyword=None):
     target_servers = _resolve_servers(hosts)
     if not target_servers:
         return {'success': False, 'error': '没有匹配的目标服务器', 'results': []}
 
-    if keyword:
-        command = f"ps aux | grep python3 | grep '{keyword}' | grep -v grep"
-    else:
-        command = "ps aux | grep python3 | grep -v grep"
-
     results = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(target_servers)) as executor:
-        futures = {executor.submit(exec_command, s, command, 10): s for s in target_servers}
+        futures = {}
+        for s in target_servers:
+            docker = get_docker_config(s)
+            if docker and docker.get('container'):
+                if keyword:
+                    cmd = f"docker exec {docker['container']} ps aux | grep python3 | grep '{keyword}' | grep -v grep"
+                else:
+                    cmd = f"docker exec {docker['container']} ps aux | grep python3 | grep -v grep"
+            else:
+                if keyword:
+                    cmd = f"ps aux | grep python3 | grep '{keyword}' | grep -v grep"
+                else:
+                    cmd = "ps aux | grep python3 | grep -v grep"
+            futures[executor.submit(exec_command, s, cmd, 10)] = s
+
         for f in concurrent.futures.as_completed(futures):
             try:
                 r = f.result()
@@ -320,11 +362,17 @@ def stop_script(pid, hosts=None):
     if not target_servers:
         return {'success': False, 'error': '没有匹配的目标服务器', 'results': []}
 
-    command = f'kill {pid} 2>/dev/null; sleep 1; kill -0 {pid} 2>/dev/null && echo "still_running" || echo "stopped"'
-
     results = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(target_servers)) as executor:
-        futures = {executor.submit(exec_command, s, command, 10): s for s in target_servers}
+        futures = {}
+        for s in target_servers:
+            docker = get_docker_config(s)
+            if docker and docker.get('container'):
+                cmd = f"docker exec {docker['container']} bash -c 'kill {pid} 2>/dev/null; sleep 1; kill -0 {pid} 2>/dev/null && echo \"still_running\" || echo \"stopped\"'"
+            else:
+                cmd = f'kill {pid} 2>/dev/null; sleep 1; kill -0 {pid} 2>/dev/null && echo "still_running" || echo "stopped"'
+            futures[executor.submit(exec_command, s, cmd, 10)] = s
+
         for f in concurrent.futures.as_completed(futures):
             try:
                 r = f.result()
@@ -353,6 +401,147 @@ def stop_script(pid, hosts=None):
     }
 
 
+def setup_docker(hosts=None):
+    target_servers = _resolve_servers(hosts)
+    if not target_servers:
+        return {'success': False, 'error': '没有匹配的目标服务器', 'results': []}
+
+    results = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(target_servers)) as executor:
+        futures = {}
+        for s in target_servers:
+            docker = get_docker_config(s)
+            if not docker or not docker.get('create_cmd'):
+                futures[executor.submit(_noop_no_docker, s)] = s
+                continue
+
+            check_cmd = f"docker ps -q -f name={docker['container']}"
+            futures[executor.submit(_setup_single, s, docker, check_cmd)] = s
+
+        for f in concurrent.futures.as_completed(futures):
+            try:
+                results.append(f.result())
+            except Exception as e:
+                results.append({
+                    'host': futures[f]['host'],
+                    'success': False,
+                    'error': str(e),
+                    'container': '',
+                    'action': ''
+                })
+
+    success_count = sum(1 for r in results if r['success'])
+    return {
+        'success': success_count > 0,
+        'total': len(target_servers),
+        'success_count': success_count,
+        'fail_count': len(target_servers) - success_count,
+        'results': results
+    }
+
+
+def _setup_single(server, docker, check_cmd):
+    host = server['host']
+    container = docker.get('container', '')
+
+    r = exec_command(server, check_cmd, 10)
+    if r['success'] and r.get('output', '').strip():
+        return {
+            'host': host,
+            'container': container,
+            'action': 'already_running',
+            'success': True,
+            'output': f'容器 {container} 已在运行'
+        }
+
+    create_cmd = docker['create_cmd']
+    r = exec_command(server, create_cmd, 30)
+    container_id = r.get('output', '').strip()[:12] if r['success'] else ''
+    return {
+        'host': host,
+        'container': container,
+        'container_id': container_id,
+        'action': 'created' if r['success'] else 'failed',
+        'success': r['success'],
+        'output': r.get('output', ''),
+        'error': r.get('error', '')
+    }
+
+
+def _noop_no_docker(server):
+    return {
+        'host': server['host'],
+        'container': '',
+        'action': 'skipped',
+        'success': True,
+        'output': '未配置 Docker，跳过'
+    }
+
+
+def list_containers(hosts=None):
+    target_servers = _resolve_servers(hosts)
+    if not target_servers:
+        return {'success': False, 'error': '没有匹配的目标服务器', 'results': []}
+
+    results = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(target_servers)) as executor:
+        futures = {}
+        for s in target_servers:
+            docker = get_docker_config(s)
+            if docker and docker.get('container'):
+                cmd = f"docker ps -a --filter name={docker['container']} --format '{{{{.ID}}}} {{{{.Names}}}} {{{{.Status}}}} {{{{.Image}}}}'"
+            else:
+                cmd = "docker ps -a --format '{{.ID}} {{.Names}} {{.Status}} {{.Image}}' | head -10"
+            futures[executor.submit(exec_command, s, cmd, 10)] = s
+
+        for f in concurrent.futures.as_completed(futures):
+            try:
+                r = f.result()
+                containers = []
+                for line in r.get('output', '').strip().split('\n'):
+                    if line.strip():
+                        parts = line.strip().split(None, 3)
+                        if len(parts) >= 4:
+                            containers.append({
+                                'id': parts[0],
+                                'name': parts[1],
+                                'status': parts[2],
+                                'image': parts[3]
+                            })
+                r['containers'] = containers
+                results.append(r)
+            except Exception as e:
+                results.append({
+                    'host': futures[f]['host'],
+                    'output': '',
+                    'error': str(e),
+                    'exit_code': -1,
+                    'success': False,
+                    'containers': []
+                })
+
+    return {
+        'success': any(r['success'] for r in results),
+        'results': results
+    }
+
+
+def _parse_ls_output(output):
+    log_files = []
+    for line in output.strip().split('\n'):
+        if not line.strip():
+            continue
+        parts = line.split(None, 8)
+        if len(parts) >= 9:
+            log_files.append({
+                'permissions': parts[0],
+                'size': parts[4],
+                'date': f"{parts[5]} {parts[6]} {parts[7]}",
+                'path': parts[8]
+            })
+    return log_files
+
+
 def _parse_ps_output(output):
     processes = []
     for line in output.strip().split('\n'):
@@ -372,6 +561,156 @@ def _parse_ps_output(output):
                 'command': parts[10]
             })
     return processes
+
+
+def auto_deploy(script_path, count=4, args=None, min_idle_cards=1):
+    results = query_npu_status()
+    if not results:
+        return {'success': False, 'error': '无法查询 NPU 状态', 'selected_hosts': [], 'results': []}
+
+    candidates = []
+    for r in results:
+        if r.get('error'):
+            continue
+        idle_count = len(r.get('idle', []))
+        if idle_count >= min_idle_cards:
+            candidates.append({
+                'host': r['host'],
+                'idle_cards': idle_count,
+                'idle_list': r['idle'],
+                'total_cards': r['total'],
+                'busy_cards': len(r.get('busy', []))
+            })
+
+    candidates.sort(key=lambda x: (-x['idle_cards'], x['host']))
+    selected = candidates[:count]
+
+    if not selected:
+        return {
+            'success': False,
+            'error': f'没有满足条件的空闲节点（需要至少 {min_idle_cards} 张空闲卡）',
+            'candidates': candidates,
+            'selected_hosts': [],
+            'results': []
+        }
+
+    selected_hosts = [s['host'] for s in selected]
+
+    sync_result = sync_script(script_path, selected_hosts)
+    if not sync_result['success']:
+        return {
+            'success': False,
+            'error': '脚本同步失败',
+            'selected_hosts': selected_hosts,
+            'selection_detail': selected,
+            'sync_result': sync_result,
+            'results': []
+        }
+
+    launch_result = launch_script(script_path, selected_hosts, args)
+
+    return {
+        'success': launch_result['success'],
+        'selected_hosts': selected_hosts,
+        'selection_detail': selected,
+        'requested_count': count,
+        'actual_count': len(selected),
+        'min_idle_cards': min_idle_cards,
+        'sync_result': sync_result,
+        'launch_result': launch_result,
+        'results': launch_result.get('results', [])
+    }
+
+
+def smart_deploy(script_path, count=4, args=None, min_idle_cards=1):
+    steps = []
+
+    results = query_npu_status()
+    if not results:
+        return {'success': False, 'error': '无法查询 NPU 状态', 'steps': steps}
+
+    candidates = []
+    for r in results:
+        if r.get('error'):
+            continue
+        idle_count = len(r.get('idle', []))
+        if idle_count >= min_idle_cards:
+            candidates.append({
+                'host': r['host'],
+                'idle_cards': idle_count,
+                'idle_list': r['idle'],
+                'total_cards': r['total'],
+                'busy_cards': len(r.get('busy', []))
+            })
+
+    candidates.sort(key=lambda x: (-x['idle_cards'], x['host']))
+    selected = candidates[:count]
+
+    if not selected:
+        return {
+            'success': False,
+            'error': f'没有满足条件的空闲节点（需要至少 {min_idle_cards} 张空闲卡）',
+            'candidates': candidates,
+            'steps': steps
+        }
+
+    selected_hosts = [s['host'] for s in selected]
+    steps.append({
+        'step': 'select_nodes',
+        'success': True,
+        'detail': selected,
+        'message': f'选中 {len(selected)} 个节点: {", ".join(selected_hosts)}'
+    })
+
+    docker_result = setup_docker(selected_hosts)
+    docker_ok = docker_result.get('success', False)
+    steps.append({
+        'step': 'setup_docker',
+        'success': docker_ok,
+        'detail': docker_result.get('results', []),
+        'message': f'Docker 设置: {docker_result.get("success_count", 0)}/{docker_result.get("total", 0)} 成功'
+    })
+
+    sync_result = sync_script(script_path, selected_hosts)
+    if not sync_result['success']:
+        steps.append({
+            'step': 'sync_script',
+            'success': False,
+            'detail': sync_result,
+            'message': f'脚本同步失败'
+        })
+        return {
+            'success': False,
+            'error': '脚本同步失败',
+            'selected_hosts': selected_hosts,
+            'steps': steps
+        }
+    steps.append({
+        'step': 'sync_script',
+        'success': True,
+        'detail': sync_result,
+        'message': f'脚本同步: {sync_result.get("success_count", 0)}/{sync_result.get("total", 0)} 成功'
+    })
+
+    launch_result = launch_script(script_path, selected_hosts, args)
+    steps.append({
+        'step': 'launch_script',
+        'success': launch_result.get('success', False),
+        'detail': launch_result.get('results', []),
+        'message': f'脚本启动: {launch_result.get("success_count", 0)}/{launch_result.get("total", 0)} 成功'
+    })
+
+    return {
+        'success': launch_result.get('success', False),
+        'selected_hosts': selected_hosts,
+        'selection_detail': selected,
+        'requested_count': count,
+        'actual_count': len(selected),
+        'min_idle_cards': min_idle_cards,
+        'steps': steps,
+        'launch_result': launch_result,
+        'results': launch_result.get('results', [])
+    }
 
 
 def _resolve_servers(hosts=None):

@@ -54,6 +54,10 @@ def get_watch_dir():
     return deploy.get('watch_dir', SCRIPT_DIR)
 
 
+def get_docker_config(server):
+    return server.get('docker', None)
+
+
 def filter_servers(hosts=None):
     servers = get_servers()
     if not hosts:

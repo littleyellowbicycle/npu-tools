@@ -27,6 +27,10 @@ from services.develop import (
     list_logs,
     list_processes,
     stop_script,
+    setup_docker,
+    list_containers,
+    auto_deploy,
+    smart_deploy,
 )
 
 log = logging.getLogger("NPU-Tools.Channel.MCP")
@@ -178,6 +182,35 @@ async def list_tools() -> list[Tool]:
                         "type": "string",
                         "description": "传递给脚本的命令行参数",
                         "default": ""
+                    }
+                },
+                "required": ["script_path"]
+            }
+        ),
+        Tool(
+            name="smart_deploy",
+            description="【推荐】一键智能部署全流程：自动选择空闲节点 → 创建 Docker 容器（如未运行）→ 同步脚本 → 在 Docker 中启动脚本。当用户要求部署/运行脚本到节点时，优先使用此工具，不要手动串联 query_npu_status + setup_docker + sync_script + launch_script。",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "script_path": {
+                        "type": "string",
+                        "description": "要部署的脚本文件名（如 'train.py'），或本地完整路径"
+                    },
+                    "count": {
+                        "type": "integer",
+                        "description": "需要选择的节点数量",
+                        "default": 4
+                    },
+                    "args": {
+                        "type": "string",
+                        "description": "传递给脚本的命令行参数",
+                        "default": ""
+                    },
+                    "min_idle_cards": {
+                        "type": "integer",
+                        "description": "每个节点最少需要的空闲卡数",
+                        "default": 1
                     }
                 },
                 "required": ["script_path"]
@@ -340,6 +373,65 @@ async def list_tools() -> list[Tool]:
                 "required": ["pid"]
             }
         ),
+        Tool(
+            name="setup_docker",
+            description="在远程节点上创建并启动 Docker 容器。使用 config.yaml 中预配置的 docker.create_cmd 命令。如果容器已在运行则跳过。",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "hosts": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "目标服务器 IP 列表，为空则使用配置中的 deploy_nodes"
+                    }
+                },
+                "required": []
+            }
+        ),
+        Tool(
+            name="list_containers",
+            description="列出远程节点上的 Docker 容器状态。",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "hosts": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "目标服务器 IP 列表，为空则使用配置中的 deploy_nodes"
+                    }
+                },
+                "required": []
+            }
+        ),
+        Tool(
+            name="auto_deploy",
+            description="自动选择空闲节点部署脚本（不含 Docker 设置）。查询所有节点 NPU 状态，选择空闲卡最多的 N 个节点，自动同步并启动脚本。如需 Docker 支持，请使用 smart_deploy。",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "script_path": {
+                        "type": "string",
+                        "description": "要部署的脚本文件名（如 'train.py'），或本地完整路径"
+                    },
+                    "count": {
+                        "type": "integer",
+                        "description": "需要选择的节点数量",
+                        "default": 4
+                    },
+                    "args": {
+                        "type": "string",
+                        "description": "传递给脚本的命令行参数",
+                        "default": ""
+                    },
+                    "min_idle_cards": {
+                        "type": "integer",
+                        "description": "每个节点最少需要的空闲卡数",
+                        "default": 1
+                    }
+                },
+                "required": ["script_path"]
+            }
+        ),
     ]
 
 
@@ -422,6 +514,147 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             hosts = arguments.get('hosts')
             result = stop_script(pid, hosts)
             return [TextContent(type="text", text=_format_results(result))]
+
+        elif name == "setup_docker":
+            hosts = arguments.get('hosts')
+            result = setup_docker(hosts)
+            lines = []
+            lines.append(f"Docker 容器设置: 成功 {result.get('success_count', 0)}/{result.get('total', 0)}")
+            lines.append("")
+            for r in result.get('results', []):
+                host = r.get('host', 'unknown')
+                action = r.get('action', '')
+                container = r.get('container', '')
+                if r.get('success'):
+                    if action == 'already_running':
+                        lines.append(f"  ✅ {host}: 容器 {container} 已在运行")
+                    elif action == 'created':
+                        lines.append(f"  ✅ {host}: 容器 {container} 已创建 (ID: {r.get('container_id', '')})")
+                    elif action == 'skipped':
+                        lines.append(f"  ⏭ {host}: 未配置 Docker，跳过")
+                else:
+                    lines.append(f"  ❌ {host}: 创建失败 - {r.get('error', '未知错误')}")
+            return [TextContent(type="text", text='\n'.join(lines))]
+
+        elif name == "list_containers":
+            hosts = arguments.get('hosts')
+            result = list_containers(hosts)
+            lines = []
+            lines.append("Docker 容器状态:")
+            lines.append("=" * 60)
+            for r in result.get('results', []):
+                host = r.get('host', 'unknown')
+                containers = r.get('containers', [])
+                lines.append(f"--- {host} ({len(containers)} 个容器) ---")
+                if containers:
+                    for c in containers:
+                        lines.append(f"  {c['id']}  {c['name']}  {c['status']}  {c['image']}")
+                else:
+                    lines.append("  无容器")
+            return [TextContent(type="text", text='\n'.join(lines))]
+
+        elif name == "auto_deploy":
+            script_path = arguments['script_path']
+            count = arguments.get('count', 4)
+            args = arguments.get('args', '')
+            min_idle_cards = arguments.get('min_idle_cards', 1)
+            result = auto_deploy(script_path, count, args, min_idle_cards)
+
+            lines = []
+            if not result['success'] and not result.get('selected_hosts'):
+                lines.append(f"❌ 自动部署失败: {result.get('error', '未知错误')}")
+                return [TextContent(type="text", text='\n'.join(lines))]
+
+            lines.append(f"🎯 自动选择节点: {result.get('actual_count', 0)}/{result.get('requested_count', count)}")
+            lines.append(f"   最低空闲卡要求: {result.get('min_idle_cards', 1)} 张")
+            lines.append("")
+            lines.append("选中节点:")
+            for s in result.get('selection_detail', []):
+                lines.append(f"  ✅ {s['host']}: {s['idle_cards']} 卡空闲 ({','.join(map(str, s['idle_list']))}) / 共 {s['total_cards']} 卡")
+
+            if result.get('selected_hosts') and not result['success']:
+                lines.append(f"\n⚠ 节点已选择，但部署失败: {result.get('error', '')}")
+
+            launch_result = result.get('launch_result')
+            if launch_result and launch_result.get('results'):
+                lines.append("")
+                lines.append("启动详情:")
+                for r in launch_result['results']:
+                    host = r.get('host', 'unknown')
+                    if r.get('success'):
+                        lines.append(f"  ✅ {host}: PID={r.get('pid')}, 日志={r.get('log_file', '')}")
+                    else:
+                        lines.append(f"  ❌ {host}: {r.get('error', '未知错误')}")
+                lines.append("")
+                lines.append("💡 使用 get_script_log 查看日志输出")
+
+            return [TextContent(type="text", text='\n'.join(lines))]
+
+        elif name == "smart_deploy":
+            script_path = arguments['script_path']
+            count = arguments.get('count', 4)
+            args = arguments.get('args', '')
+            min_idle_cards = arguments.get('min_idle_cards', 1)
+            result = smart_deploy(script_path, count, args, min_idle_cards)
+
+            lines = []
+            lines.append("🚀 智能部署全流程")
+            lines.append("=" * 60)
+
+            if not result['success'] and not result.get('selected_hosts'):
+                lines.append(f"❌ 部署失败: {result.get('error', '未知错误')}")
+                return [TextContent(type="text", text='\n'.join(lines))]
+
+            for step in result.get('steps', []):
+                step_name = step['step']
+                message = step.get('message', '')
+                ok = step.get('success', False)
+                icon = '✅' if ok else '❌'
+
+                if step_name == 'select_nodes':
+                    lines.append(f"\n📋 步骤1: 选择空闲节点")
+                    lines.append(f"   {icon} {message}")
+                    for s in step.get('detail', []):
+                        idle_str = ','.join(map(str, s['idle_list']))
+                        lines.append(f"      {s['host']}: {s['idle_cards']} 卡空闲 ({idle_str})")
+
+                elif step_name == 'setup_docker':
+                    lines.append(f"\n🐳 步骤2: 创建 Docker 容器")
+                    lines.append(f"   {icon} {message}")
+                    for r in step.get('detail', []):
+                        host = r.get('host', 'unknown')
+                        action = r.get('action', '')
+                        if r.get('success'):
+                            if action == 'already_running':
+                                lines.append(f"      ✅ {host}: 容器已在运行")
+                            elif action == 'created':
+                                lines.append(f"      ✅ {host}: 容器已创建 (ID: {r.get('container_id', '')})")
+                            elif action == 'skipped':
+                                lines.append(f"      ⏭ {host}: 无 Docker 配置，宿主机模式")
+                        else:
+                            lines.append(f"      ❌ {host}: {r.get('error', '未知错误')}")
+
+                elif step_name == 'sync_script':
+                    lines.append(f"\n📤 步骤3: 同步脚本")
+                    lines.append(f"   {icon} {message}")
+
+                elif step_name == 'launch_script':
+                    lines.append(f"\n🚀 步骤4: 启动脚本")
+                    lines.append(f"   {icon} {message}")
+                    for r in step.get('detail', []):
+                        host = r.get('host', 'unknown')
+                        if r.get('success'):
+                            lines.append(f"      ✅ {host}: PID={r.get('pid')}, 日志={r.get('log_file', '')}")
+                        else:
+                            lines.append(f"      ❌ {host}: {r.get('error', '未知错误')}")
+
+            if result['success']:
+                lines.append(f"\n✅ 部署完成! 选中 {result.get('actual_count', 0)} 个节点")
+                lines.append(f"💡 使用 get_script_log 查看日志输出，list_processes 查看进程状态")
+            else:
+                lines.append(f"\n⚠ 部分步骤失败，请检查上方详情")
+
+            return [TextContent(type="text", text='\n'.join(lines))]
 
         else:
             return [TextContent(type="text", text=f"未知工具: {name}")]

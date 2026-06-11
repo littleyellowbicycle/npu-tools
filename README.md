@@ -1,3 +1,5 @@
+<div align="center">
+
 # NPU Tools
 
 多节点 NPU 集群管理工具 — 查询状态 · 部署脚本 · 自动同步
@@ -5,6 +7,8 @@
 [![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org/) [![Paramiko](https://img.shields.io/badge/Paramiko-3.0+-2F6F9F?style=flat-square)](https://www.paramiko.org/) [![MCP](https://img.shields.io/badge/MCP-1.0+-FF6B35?style=flat-square)](https://modelcontextprotocol.io/) [![License](https://img.shields.io/badge/License-MIT-blue?style=flat-square)](LICENSE)
 
 [快速开始](#-快速开始) · [核心特性](#-核心特性) · [架构](#-架构) · [使用方式](#-使用方式) · [配置说明](#-配置说明)
+
+</div>
 
 ---
 
@@ -134,14 +138,52 @@ pip install -r requirements.txt
 ### 1. 终端查询（CLI）
 
 ```bash
-# 查询所有服务器 NPU 状态
-python npu_query.py
+# 查询所有服务器 NPU 状态（默认命令）
+python channel/cli.py
+python channel/cli.py query
 
-# 或通过分层入口
-python npu_status_query.py --local
+# 后台启动脚本
+python channel/cli.py launch train.py
+python channel/cli.py launch train.py --hosts 192.168.25.212 192.168.25.213 --args "--epochs 10"
+
+# 同步脚本到节点
+python channel/cli.py sync ./train.py
+
+# 批量同步目录
+python channel/cli.py sync-dir --dir ./scripts
+
+# 查看运行日志
+python channel/cli.py log /opt/npu-tools/logs/train_192-168-25-212_20260611_143000.log
+python channel/cli.py log /opt/npu-tools/logs/train_192-168-25-212_20260611_143000.log --lines 100
+
+# 列出日志文件
+python channel/cli.py logs
+python channel/cli.py logs --keyword train
+
+# 列出运行中的进程
+python channel/cli.py ps
+python channel/cli.py ps --keyword train
+
+# 终止进程
+python channel/cli.py stop 12345
+
+# 启动/停止文件监控
+python channel/cli.py watch
+python channel/cli.py watch-stop
+
+# 列出配置的服务器
+python channel/cli.py servers
 ```
 
-退出码说明：
+也支持通过兼容入口：
+
+```bash
+python npu_status_query.py --local query
+python npu_status_query.py --local launch train.py
+python npu_status_query.py --local ps
+```
+
+退出码说明（query 命令）：
 
 | 退出码 | 含义 |
 |--------|------|
