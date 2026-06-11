@@ -41,12 +41,13 @@ def _wrap_command(server, command):
     return command
 
 
-def launch_script(script_path, hosts=None, args=None):
+def launch_script(script_path, hosts=None, args=None, remote_dir=None):
     target_servers = _resolve_servers(hosts)
     if not target_servers:
         return {'success': False, 'error': '没有匹配的目标服务器', 'results': []}
 
-    remote_dir = get_remote_dir()
+    if remote_dir is None:
+        remote_dir = get_remote_dir()
     script_name = os.path.basename(script_path)
     remote_script_path = os.path.join(remote_dir, script_name).replace('\\', '/')
     log_dir = os.path.join(remote_dir, LOG_DIR_NAME).replace('\\', '/')
@@ -124,7 +125,7 @@ def launch_script(script_path, hosts=None, args=None):
     }
 
 
-def sync_script(script_path, hosts=None):
+def sync_script(script_path, hosts=None, remote_dir=None):
     target_servers = _resolve_servers(hosts)
     if not target_servers:
         return {'success': False, 'error': '没有匹配的目标服务器', 'results': []}
@@ -132,7 +133,8 @@ def sync_script(script_path, hosts=None):
     if not os.path.exists(script_path):
         return {'success': False, 'error': f'本地脚本不存在: {script_path}', 'results': []}
 
-    remote_dir = get_remote_dir()
+    if remote_dir is None:
+        remote_dir = get_remote_dir()
     script_name = os.path.basename(script_path)
     remote_path = os.path.join(remote_dir, script_name).replace('\\', '/')
 
@@ -162,7 +164,7 @@ def sync_script(script_path, hosts=None):
     }
 
 
-def sync_directory(local_dir=None, hosts=None):
+def sync_directory(local_dir=None, hosts=None, remote_dir=None):
     target_servers = _resolve_servers(hosts)
     if not target_servers:
         return {'success': False, 'error': '没有匹配的目标服务器', 'results': []}
@@ -173,7 +175,8 @@ def sync_directory(local_dir=None, hosts=None):
     if not os.path.isdir(local_dir):
         return {'success': False, 'error': f'本地目录不存在: {local_dir}', 'results': []}
 
-    remote_dir = get_remote_dir()
+    if remote_dir is None:
+        remote_dir = get_remote_dir()
     py_files = [f for f in os.listdir(local_dir) if f.endswith('.py')]
 
     all_results = []
@@ -627,7 +630,7 @@ def auto_deploy(script_path, count=4, args=None, min_idle_cards=1):
     }
 
 
-def smart_deploy(script_path, count=4, args=None, min_idle_cards=1, hosts=None, container=None):
+def smart_deploy(script_path, count=4, args=None, min_idle_cards=1, hosts=None, container=None, remote_dir=None):
     steps = []
 
     if hosts:
@@ -699,7 +702,7 @@ def smart_deploy(script_path, count=4, args=None, min_idle_cards=1, hosts=None, 
         'message': f'Docker 设置: {docker_result.get("success_count", 0)}/{docker_result.get("total", 0)} 成功'
     })
 
-    sync_result = sync_script(script_path, selected_hosts)
+    sync_result = sync_script(script_path, selected_hosts, remote_dir=remote_dir)
     if not sync_result['success']:
         steps.append({
             'step': 'sync_script',
@@ -720,7 +723,7 @@ def smart_deploy(script_path, count=4, args=None, min_idle_cards=1, hosts=None, 
         'message': f'脚本同步: {sync_result.get("success_count", 0)}/{sync_result.get("total", 0)} 成功'
     })
 
-    launch_result = launch_script(script_path, selected_hosts, args)
+    launch_result = launch_script(script_path, selected_hosts, args, remote_dir=remote_dir)
     steps.append({
         'step': 'launch_script',
         'success': launch_result.get('success', False),

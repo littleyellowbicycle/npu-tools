@@ -136,7 +136,7 @@ def cmd_query(args):
 
 
 def cmd_launch(args):
-    result = launch_script(args.script, args.hosts, args.args)
+    result = launch_script(args.script, args.hosts, args.args, remote_dir=args.remote_dir)
     if not result['success']:
         print(f"❌ 启动失败", file=sys.stderr)
         sys.exit(1)
@@ -153,7 +153,7 @@ def cmd_launch(args):
 
 
 def cmd_sync(args):
-    result = sync_script(args.script, args.hosts)
+    result = sync_script(args.script, args.hosts, remote_dir=args.remote_dir)
     if not result['success']:
         print(f"❌ 同步失败", file=sys.stderr)
         sys.exit(1)
@@ -169,7 +169,7 @@ def cmd_sync(args):
 
 
 def cmd_sync_dir(args):
-    result = sync_directory(args.dir, args.hosts)
+    result = sync_directory(args.dir, args.hosts, remote_dir=args.remote_dir)
     if not result['success']:
         print(f"❌ 目录同步失败", file=sys.stderr)
         sys.exit(1)
@@ -382,7 +382,8 @@ def cmd_auto_deploy(args):
 def cmd_smart_deploy(args):
     hosts = args.hosts if hasattr(args, 'hosts') and args.hosts else None
     container = args.container if hasattr(args, 'container') and args.container else None
-    result = smart_deploy(args.script, args.count, args.args, args.min_idle, hosts, container)
+    remote_dir = args.remote_dir if hasattr(args, 'remote_dir') and args.remote_dir else None
+    result = smart_deploy(args.script, args.count, args.args, args.min_idle, hosts, container, remote_dir)
     print(f"\n🚀 智能部署全流程")
     print("=" * 60)
 
@@ -455,14 +456,17 @@ def build_parser():
     p_launch.add_argument('script', help='脚本文件名或本地路径')
     p_launch.add_argument('--hosts', nargs='+', help='目标服务器 IP 列表')
     p_launch.add_argument('--args', default='', help='传递给脚本的参数')
+    p_launch.add_argument('--remote-dir', help='覆盖远程脚本目录（宿主机路径）')
 
     p_sync = sub.add_parser('sync', help='同步单个脚本')
     p_sync.add_argument('script', help='本地脚本路径')
     p_sync.add_argument('--hosts', nargs='+', help='目标服务器 IP 列表')
+    p_sync.add_argument('--remote-dir', help='覆盖远程上传目录（宿主机路径）')
 
     p_sync_dir = sub.add_parser('sync-dir', help='批量同步目录')
     p_sync_dir.add_argument('--dir', help='本地目录路径')
     p_sync_dir.add_argument('--hosts', nargs='+', help='目标服务器 IP 列表')
+    p_sync_dir.add_argument('--remote-dir', help='覆盖远程上传目录（宿主机路径）')
 
     p_watch_start = sub.add_parser('watch', help='启动文件监控')
     p_watch_start.add_argument('--hosts', nargs='+', help='目标服务器 IP 列表')
@@ -508,6 +512,7 @@ def build_parser():
     p_smart.add_argument('--args', default='', help='传递给脚本的参数')
     p_smart.add_argument('--hosts', nargs='+', help='指定目标节点 IP（跳过自动选择）')
     p_smart.add_argument('--container', help='覆盖 Docker 容器名')
+    p_smart.add_argument('--remote-dir', help='覆盖远程上传目录（宿主机路径）')
 
     return parser
 

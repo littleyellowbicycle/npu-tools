@@ -153,6 +153,7 @@ python channel/cli.py deploy train.py
 python channel/cli.py deploy train.py --count 2 --min-idle 4 --args "--epochs 100"
 python channel/cli.py deploy train.py --hosts 192.168.25.212 192.168.25.213
 python channel/cli.py deploy train.py --container my-container
+python channel/cli.py deploy train.py --remote-dir /data/scripts
 
 # 自动选择空闲节点部署（不含 Docker）
 python channel/cli.py auto train.py --count 4
@@ -163,9 +164,11 @@ python channel/cli.py launch train.py --hosts 192.168.25.212 192.168.25.213 --ar
 
 # 同步脚本到节点
 python channel/cli.py sync ./train.py
+python channel/cli.py sync ./train.py --remote-dir /data/scripts
 
 # 批量同步目录
 python channel/cli.py sync-dir --dir ./scripts
+python channel/cli.py sync-dir --remote-dir /data/scripts
 
 # 查看运行日志
 python channel/cli.py log /opt/npu-tools/logs/train_192-168-25-212_20260611_143000.log
@@ -321,6 +324,7 @@ cwd = "d:/project/npu-tools"
 - "在 212 和 213 上部署 train.py" → `smart_deploy(hosts=["192.168.25.212", "192.168.25.213"])`
 - "在 docker my-container 中执行 train.py" → `smart_deploy(container="my-container")`
 - "在 212 的 docker test 中跑 train.py" → `smart_deploy(hosts=["192.168.25.212"], container="test")`
+- "把 train.py 上传到 /data/scripts 并启动" → `smart_deploy(remote_dir="/data/scripts")`
 
 **查询与监控：**
 
@@ -410,7 +414,7 @@ feishu:
 
 # 脚本部署配置
 script_deploy:
-  remote_dir: "/opt/npu-tools"       # 远程部署目录（宿主机路径）
+  remote_dir: "/opt/npu-tools"       # 远程部署目录（宿主机路径，可通过 --remote-dir 覆盖）
   # deploy_nodes:                     # 可选：默认部署节点，不配置则使用 servers 中所有节点
   #   - "192.168.25.212"
   watch_dir: "."                      # 本地监控目录

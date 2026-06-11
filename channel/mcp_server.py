@@ -182,6 +182,10 @@ async def list_tools() -> list[Tool]:
                         "type": "string",
                         "description": "传递给脚本的命令行参数",
                         "default": ""
+                    },
+                    "remote_dir": {
+                        "type": "string",
+                        "description": "覆盖远程脚本目录（宿主机路径），不设置则使用 config.yaml 中的 remote_dir"
                     }
                 },
                 "required": ["script_path"]
@@ -220,6 +224,10 @@ async def list_tools() -> list[Tool]:
                     "container": {
                         "type": "string",
                         "description": "覆盖 Docker 容器名（如 'sglang-0610'），不设置则使用 config.yaml 中的配置"
+                    },
+                    "remote_dir": {
+                        "type": "string",
+                        "description": "覆盖远程上传目录（宿主机路径，如 '/data/scripts'），不设置则使用 config.yaml 中的 remote_dir"
                     }
                 },
                 "required": ["script_path"]
@@ -239,6 +247,10 @@ async def list_tools() -> list[Tool]:
                         "type": "array",
                         "items": {"type": "string"},
                         "description": "目标服务器 IP 列表，为空则使用配置中的 deploy_nodes"
+                    },
+                    "remote_dir": {
+                        "type": "string",
+                        "description": "覆盖远程上传目录（宿主机路径），不设置则使用 config.yaml 中的 remote_dir"
                     }
                 },
                 "required": ["script_path"]
@@ -459,13 +471,15 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             script_path = arguments['script_path']
             hosts = arguments.get('hosts')
             args = arguments.get('args', '')
-            result = launch_script(script_path, hosts, args)
+            remote_dir = arguments.get('remote_dir')
+            result = launch_script(script_path, hosts, args, remote_dir=remote_dir)
             return [TextContent(type="text", text=_format_launch_result(result))]
 
         elif name == "sync_script":
             script_path = arguments['script_path']
             hosts = arguments.get('hosts')
-            result = sync_script(script_path, hosts)
+            remote_dir = arguments.get('remote_dir')
+            result = sync_script(script_path, hosts, remote_dir=remote_dir)
             return [TextContent(type="text", text=_format_results(result))]
 
         elif name == "sync_directory":
@@ -606,7 +620,8 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             min_idle_cards = arguments.get('min_idle_cards', 1)
             hosts = arguments.get('hosts', None)
             container = arguments.get('container', None)
-            result = smart_deploy(script_path, count, args, min_idle_cards, hosts, container)
+            remote_dir = arguments.get('remote_dir', None)
+            result = smart_deploy(script_path, count, args, min_idle_cards, hosts, container, remote_dir)
 
             lines = []
             lines.append("🚀 智能部署全流程")
