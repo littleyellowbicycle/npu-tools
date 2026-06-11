@@ -16,7 +16,7 @@
 
 > 管理集群不应该比使用集群更累。
 
-跑大模型推理服务通常要使用多个npu节点，每次查状态要逐台 SSH、部署脚本要逐台上传、改了代码要逐台同步。NPU Tools 把这些重复操作变成一句话的事——通过 MCP 让 AI 直接操作集群，通过飞书让手机也能查状态，通过文件监控让开发时自动同步。
+跑大模型推理服务通常要使用多个 NPU 节点，每次查状态要逐台 SSH、部署脚本要逐台上传、改了代码要逐台同步。NPU Tools 把这些重复操作变成一句话的事——通过 MCP 让 AI 直接操作集群，通过飞书让手机也能查状态，通过文件监控让开发时自动同步。
 
 ---
 
@@ -26,17 +26,21 @@
 
 SSH 并发查询多台服务器 `npu-smi info`，智能解析输出，精确区分空闲 / 占用 / 异常卡。终端彩色表格、飞书状态图片、MCP 文本结果三种输出格式。
 
-### 🚀 脚本远程启动
+### 🚀 一键智能部署
 
-一条命令在指定节点上后台启动同一个脚本（nohup），输出自动重定向到日志文件。随时查看日志回显、列出运行进程、终止指定进程。
+一条命令完成全流程：自动选择空闲节点 → 创建 Docker 容器 → 同步脚本 → 在容器中启动。支持宿主机 / Docker 两种执行模式，按节点配置自动切换。
 
 ### 🔄 脚本同步与自动监控
 
 单文件同步、目录批量同步、文件变更自动监控——修改本地代码，远程节点实时更新。
 
+### 🐳 Docker 容器管理
+
+在 `config.yaml` 中预配置 Docker 创建命令，一键创建容器、查看容器状态。脚本执行自动通过 `docker exec` 在容器内运行，文件通过 volume 挂载同步。
+
 ### 🤖 MCP 协议集成
 
-通过 MCP (Model Context Protocol) 暴露所有能力，AI 工具（如 Trae）可直接调用查询状态、部署脚本、管理节点。
+通过 MCP (Model Context Protocol) 暴露所有能力，AI 工具（如 Trae、Claude Code、Codex）可直接调用查询状态、部署脚本、管理节点。
 
 ### 💬 飞书机器人
 
@@ -56,17 +60,17 @@ WebSocket 长连接，用户在飞书发送 `npu` 即可获取 NPU 状态图片�
 │                                                           │
 │   MCP Server          Feishu Bot          CLI             │
 │   AI 工具调用           飞书消息触发          终端命令行       │
-│   (stdio)             (WebSocket)         (--local)       │
+│   (stdio)             (WebSocket)         (argparse)      │
 └────────┬──────────────────┬──────────────────┬───────────┘
          │                  │                  │
 ┌────────┴──────────────────┴──────────────────┴───────────┐
 │                   Service Layer (服务层)                    │
 │                                                           │
-│   ┌─────────────────┐    ┌─────────────────┐             │
-│   │   NPU Service   │    │     Develop      │             │
-│   │  查询 · 解析 ·   │    │  部署 · 同步 ·   │             │
-│   │  图片生成        │    │  文件监控        │             │
-│   └────────┬────────┘    └────────┬────────┘             │
+│   ┌─────────────────┐    ┌─────────────────────┐         │
+│   │   NPU Service   │    │       Develop        │         │
+│   │  查询 · 解析 ·   │    │  部署 · 同步 · 监控  │         │
+│   │  图片生成        │    │  Docker · 进程管理   │         │
+│   └────────┬────────┘    └────────┬────────────┘         │
 └────────────┼──────────────────────┼──────────────────────┘
              │                      │
 ┌────────────┼──────────────────────┼──────────────────────┐
@@ -135,12 +139,21 @@ pip install -r requirements.txt
 
 ## 📖 使用方式
 
-### 1. 终端查询（CLI）
+### 1. 终端命令（CLI）
+
+CLI 使用 argparse 子命令，支持 15 个操作：
 
 ```bash
-# 查询所有服务器 NPU 状态（默认命令）
+# 查询 NPU 状态（默认命令）
 python channel/cli.py
 python channel/cli.py query
+
+# 一键智能部署（选节点 + Docker + 同步 + 启动）
+python channel/cli.py deploy train.py
+python channel/cli.py deploy train.py --count 2 --min-idle 4 --args "--epochs 100"
+
+# 自动选择空闲节点部署（不含 Docker）
+python channel/cli.py auto train.py --count 4
 
 # 后台启动脚本
 python channel/cli.py launch train.py
@@ -167,6 +180,10 @@ python channel/cli.py ps --keyword train
 # 终止进程
 python channel/cli.py stop 12345
 
+# Docker 容器管理
+python channel/cli.py docker
+python channel/cli.py containers
+
 # 启动/停止文件监控
 python channel/cli.py watch
 python channel/cli.py watch-stop
@@ -178,8 +195,8 @@ python channel/cli.py servers
 也支持通过兼容入口：
 
 ```bash
+python npu_status_query.py --local deploy train.py
 python npu_status_query.py --local query
-python npu_status_query.py --local launch train.py
 python npu_status_query.py --local ps
 ```
 
@@ -275,6 +292,8 @@ cwd = "d:/project/npu-tools"
 
 | 工具 | 说明 |
 |------|------|
+| `smart_deploy` | **【推荐】** 一键智能部署：选节点 → Docker → 同步 → 启动 |
+| `auto_deploy` | 自动选择空闲节点部署（不含 Docker） |
 | `query_npu_status` | 查询 NPU 状态（空闲/占用卡） |
 | `launch_script` | 后台启动脚本（nohup），返回 PID 和日志路径 |
 | `get_script_log` | 查看脚本运行日志（tail） |
@@ -285,19 +304,32 @@ cwd = "d:/project/npu-tools"
 | `sync_directory` | 批量同步目录下所有脚本 |
 | `start_file_watcher` | 启动文件变更自动同步 |
 | `stop_file_watcher` | 停止文件监控 |
+| `setup_docker` | 创建/启动 Docker 容器 |
+| `list_containers` | 列出 Docker 容器状态 |
 | `list_servers` | 列出所有配置的服务器节点 |
 
 #### 使用示例
 
 配置完成后，直接在对话中使用：
 
+**智能部署（最常用）：**
+
+- "帮我找 4 台空闲机器部署 train.py" → `smart_deploy` 一键完成
+- "找 2 台至少 4 卡空闲的机器跑 train.py --epochs 100" → `smart_deploy(count=2, min_idle_cards=4)`
+- "部署脚本到 212-215" → `smart_deploy` 自动处理 Docker + 同步 + 启动
+
+**查询与监控：**
+
 - "查询 NPU 状态" → 查询所有节点
-- "在 212-215 上运行 train.py" → 后台启动脚本，返回 PID 和日志路径
 - "查看 train.py 的日志" → 查看运行输出
 - "列出所有日志文件" → 查看历史日志
 - "列出所有运行中的 Python 进程" → 查看进程状态
+
+**操作管理：**
+
 - "停止 PID 12345" → 终止进程
 - "同步 train.py 到服务器" → 上传脚本
+- "创建 Docker 容器" → `setup_docker`
 - "启动文件监控" → 自动同步变更
 
 ### 3. 飞书机器人
@@ -324,25 +356,31 @@ python npu_status_query.py
 编辑 `config.yaml`：
 
 ```yaml
-# 服务器列表（SSH 连接信息）
+# 服务器列表（SSH 连接信息 + Docker 配置）
 servers:
   - host: "192.168.25.212"
     port: 22
     username: "root"
     password: "YOUR_SERVER_PASSWORD"
-  - host: "192.168.25.213"
+    docker:                              # 可选：Docker 容器配置
+      container: "npu-train"             #   容器名
+      workdir: "/workspace"              #   容器内工作目录（挂载点）
+      create_cmd: "docker run -d --name npu-train --device=/dev/davinci0 ... sleep infinity"
+
+  - host: "192.168.25.216"
     port: 22
     username: "root"
     password: "YOUR_SERVER_PASSWORD"
+    # 无 docker 配置 = 直接在宿主机执行
 
 # 飞书机器人配置（仅飞书模式需要）
 feishu:
   app_id: "YOUR_FEISHU_APP_ID"
   app_secret: "YOUR_FEISHU_APP_SECRET"
 
-# 脚本部署配置（MCP / 开发模式需要）
+# 脚本部署配置
 script_deploy:
-  remote_dir: "/opt/npu-tools"       # 远程部署目录
+  remote_dir: "/opt/npu-tools"       # 远程部署目录（宿主机路径）
   deploy_nodes:                       # 默认部署节点
     - "192.168.25.212"
     - "192.168.25.213"
@@ -350,6 +388,16 @@ script_deploy:
     - "192.168.25.215"
   watch_dir: "."                      # 本地监控目录
 ```
+
+### Docker 配置说明
+
+| 字段 | 说明 |
+|------|------|
+| `docker.container` | 容器名，用于 `docker exec` 执行命令 |
+| `docker.workdir` | 容器内工作目录，需与 `create_cmd` 中的 `-v` 挂载对应 |
+| `docker.create_cmd` | 完整的 `docker run` 命令，`setup_docker` 时执行 |
+
+**关键**：`create_cmd` 中的 `-v` 挂载必须将宿主机 `remote_dir`（如 `/opt/npu-tools`）映射到容器 `workdir`（如 `/workspace`），这样同步到宿主机的文件才能在容器内访问。
 
 ---
 
@@ -369,7 +417,7 @@ npu-tools/
 │
 ├── services/                    # Service 层 — 业务逻辑
 │   ├── npu_service.py           #   NPU 查询、解析、图片生成
-│   └── develop.py               #   脚本部署、同步、文件监控
+│   └── develop.py               #   部署、同步、监控、Docker、进程管理
 │
 ├── driver/                      # Driver 层 — 驱动外部系统
 │   └── ssh_driver.py            #   SSH/SFTP 驱动
@@ -394,23 +442,30 @@ Channel → Service → Driver → Config
 
 ## 🧭 典型工作流
 
+### 一键智能部署（最常用）
+
+```
+对话: "帮我找4台空闲机器部署 train.py"
+  → MCP smart_deploy
+  → 自动: 查询状态 → 选4台空闲节点 → 创建Docker → 同步脚本 → 启动脚本
+  → 返回: 选中节点、PID、日志路径
+  → 对话: "查看日志" → MCP get_script_log
+```
+
+### 精细控制部署
+
+```
+对话: "找2台至少4卡空闲的机器跑 train.py --epochs 100"
+  → MCP smart_deploy(count=2, min_idle_cards=4, args="--epochs 100")
+  → 自动选择满足条件的节点，完成全流程
+```
+
 ### 查看集群状态
 
 ```
 对话: "查询 NPU 状态"
   → MCP query_npu_status
   → 返回各节点空闲/占用信息
-```
-
-### 部署并运行脚本
-
-```
-对话: "在所有节点上运行 train.py"
-  → MCP sync_script    (上传脚本)
-  → MCP launch_script  (后台启动，返回 PID 和日志路径)
-  → 对话: "查看日志"   → MCP get_script_log (查看运行输出)
-  → 对话: "列出进程"   → MCP list_processes (查看进程状态)
-  → 对话: "停止训练"   → MCP stop_script    (终止进程)
 ```
 
 ### 开发时自动同步
