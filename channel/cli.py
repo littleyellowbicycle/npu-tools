@@ -380,7 +380,9 @@ def cmd_auto_deploy(args):
 
 
 def cmd_smart_deploy(args):
-    result = smart_deploy(args.script, args.count, args.args, args.min_idle)
+    hosts = args.hosts if hasattr(args, 'hosts') and args.hosts else None
+    container = args.container if hasattr(args, 'container') and args.container else None
+    result = smart_deploy(args.script, args.count, args.args, args.min_idle, hosts, container)
     print(f"\n🚀 智能部署全流程")
     print("=" * 60)
 
@@ -504,6 +506,8 @@ def build_parser():
     p_smart.add_argument('--count', type=int, default=4, help='选择节点数量（默认 4）')
     p_smart.add_argument('--min-idle', type=int, default=1, help='每节点最少空闲卡数（默认 1）')
     p_smart.add_argument('--args', default='', help='传递给脚本的参数')
+    p_smart.add_argument('--hosts', nargs='+', help='指定目标节点 IP（跳过自动选择）')
+    p_smart.add_argument('--container', help='覆盖 Docker 容器名')
 
     return parser
 

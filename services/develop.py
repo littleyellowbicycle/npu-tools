@@ -6,6 +6,7 @@ import time
 import logging
 import threading
 import concurrent.futures
+import copy
 
 from config import filter_servers, get_deploy_nodes, get_remote_dir, get_watch_dir, get_docker_config, build_docker_create_cmd
 from services.npu_service import query_npu_status
@@ -626,45 +627,68 @@ def auto_deploy(script_path, count=4, args=None, min_idle_cards=1):
     }
 
 
-def smart_deploy(script_path, count=4, args=None, min_idle_cards=1):
+def smart_deploy(script_path, count=4, args=None, min_idle_cards=1, hosts=None, container=None):
     steps = []
 
-    results = query_npu_status()
-    if not results:
-        return {'success': False, 'error': '无法查询 NPU 状态', 'steps': steps}
+    if hosts:
+        selected_hosts = hosts if isinstance(hosts, list) else [hosts]
+        selected = []
+        for h in selected_hosts:
+            selected.append({'host': h, 'idle_cards': '?', 'source': 'user_specified'})
+        steps.append({
+            'step': 'select_nodes',
+            'success': True,
+            'detail': selected,
+            'message': f'用户指定 {len(selected_hosts)} 个节点: {", ".join(selected_hosts)}'
+        })
+    else:
+        results = query_npu_status()
+        if not results:
+            return {'success': False, 'error': '无法查询 NPU 状态', 'steps': steps}
 
-    candidates = []
-    for r in results:
-        if r.get('error'):
-            continue
-        idle_count = len(r.get('idle', []))
-        if idle_count >= min_idle_cards:
-            candidates.append({
-                'host': r['host'],
-                'idle_cards': idle_count,
-                'idle_list': r['idle'],
-                'total_cards': r['total'],
-                'busy_cards': len(r.get('busy', []))
-            })
+        candidates = []
+        for r in results:
+            if r.get('error'):
+                continue
+            idle_count = len(r.get('idle', []))
+            if idle_count >= min_idle_cards:
+                candidates.append({
+                    'host': r['host'],
+                    'idle_cards': idle_count,
+                    'idle_list': r['idle'],
+                    'total_cards': r['total'],
+                    'busy_cards': len(r.get('busy', []))
+                })
 
-    candidates.sort(key=lambda x: (-x['idle_cards'], x['host']))
-    selected = candidates[:count]
+        candidates.sort(key=lambda x: (-x['idle_cards'], x['host']))
+        selected = candidates[:count]
 
-    if not selected:
-        return {
-            'success': False,
-            'error': f'没有满足条件的空闲节点（需要至少 {min_idle_cards} 张空闲卡）',
-            'candidates': candidates,
-            'steps': steps
-        }
+        if not selected:
+            return {
+                'success': False,
+                'error': f'没有满足条件的空闲节点（需要至少 {min_idle_cards} 张空闲卡）',
+                'candidates': candidates,
+                'steps': steps
+            }
 
-    selected_hosts = [s['host'] for s in selected]
-    steps.append({
-        'step': 'select_nodes',
-        'success': True,
-        'detail': selected,
-        'message': f'选中 {len(selected)} 个节点: {", ".join(selected_hosts)}'
-    })
+        selected_hosts = [s['host'] for s in selected]
+        steps.append({
+            'step': 'select_nodes',
+            'success': True,
+            'detail': selected,
+            'message': f'选中 {len(selected)} 个节点: {", ".join(selected_hosts)}'
+        })
+
+    if container:
+        target_servers = filter_servers(selected_hosts)
+        _container_overrides = {}
+        for s in target_servers:
+            docker = get_docker_config(s)
+            if docker:
+                overridden = copy.deepcopy(docker)
+                overridden['container'] = container
+                _container_overrides[s['host']] = overridden
+                s['_docker_override'] = overridden
 
     docker_result = setup_docker(selected_hosts)
     docker_ok = docker_result.get('success', False)
@@ -709,7 +733,7 @@ def smart_deploy(script_path, count=4, args=None, min_idle_cards=1):
         'selected_hosts': selected_hosts,
         'selection_detail': selected,
         'requested_count': count,
-        'actual_count': len(selected),
+        'actual_count': len(selected_hosts),
         'min_idle_cards': min_idle_cards,
         'steps': steps,
         'launch_result': launch_result,

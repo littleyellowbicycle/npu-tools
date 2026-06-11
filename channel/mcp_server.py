@@ -199,7 +199,7 @@ async def list_tools() -> list[Tool]:
                     },
                     "count": {
                         "type": "integer",
-                        "description": "需要选择的节点数量",
+                        "description": "需要选择的节点数量（仅自动选择时生效，指定 hosts 时忽略）",
                         "default": 4
                     },
                     "args": {
@@ -211,6 +211,15 @@ async def list_tools() -> list[Tool]:
                         "type": "integer",
                         "description": "每个节点最少需要的空闲卡数",
                         "default": 1
+                    },
+                    "hosts": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "指定目标节点 IP 列表（如 ['192.168.25.212', '192.168.25.213']），设置后跳过自动选择"
+                    },
+                    "container": {
+                        "type": "string",
+                        "description": "覆盖 Docker 容器名（如 'sglang-0610'），不设置则使用 config.yaml 中的配置"
                     }
                 },
                 "required": ["script_path"]
@@ -595,7 +604,9 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             count = arguments.get('count', 4)
             args = arguments.get('args', '')
             min_idle_cards = arguments.get('min_idle_cards', 1)
-            result = smart_deploy(script_path, count, args, min_idle_cards)
+            hosts = arguments.get('hosts', None)
+            container = arguments.get('container', None)
+            result = smart_deploy(script_path, count, args, min_idle_cards, hosts, container)
 
             lines = []
             lines.append("🚀 智能部署全流程")

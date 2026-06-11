@@ -60,6 +60,9 @@ def get_docker_default():
 
 
 def get_docker_config(server):
+    if server.get('_docker_override'):
+        return server['_docker_override']
+
     docker = server.get('docker', None)
     if docker is None:
         return None
