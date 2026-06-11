@@ -20,7 +20,8 @@
 
 ---
 
-## ✨ 核心特性
+<details>
+<summary><h2>✨ 核心特性</h2></summary>
 
 ### 🔍 NPU 状态查询
 
@@ -50,9 +51,12 @@ WebSocket 长连接，用户在飞书发送 `npu` 即可获取 NPU 状态图片�
 
 只需 `npu_query.py` + `config.yaml` 两个文件，`pip install paramiko pyyaml` 即可查询 NPU 状态。
 
+</details>
+
 ---
 
-## 🏗 架构
+<details>
+<summary><h2>🏗 架构</h2></summary>
 
 ```
 ┌──────────────────────────────────────────────────────────┐
@@ -97,9 +101,12 @@ WebSocket 长连接，用户在飞书发送 `npu` 即可获取 NPU 状态图片�
 | **Driver** | `driver/` | 驱动外部系统（SSH），不关心业务 |
 | **Config** | `config.py` + `config.yaml` | 统一配置加载，三层共用 |
 
+</details>
+
 ---
 
-## 🚀 快速开始
+<details>
+<summary><h2>🚀 快速开始</h2></summary>
 
 ### 环境要求
 
@@ -135,9 +142,12 @@ cd npu-tools
 pip install -r requirements.txt
 ```
 
+</details>
+
 ---
 
-## 📖 使用方式
+<details>
+<summary><h2>📖 使用方式</h2></summary>
 
 ### 1. 终端命令（CLI）
 
@@ -357,9 +367,12 @@ python npu_status_query.py
 3. 在 **凭证与基础信息** 中获取 `app_id` 和 `app_secret`
 4. 配置消息权限：`im:message`（发送消息）
 
+</details>
+
 ---
 
-## ⚙️ 配置说明
+<details>
+<summary><h2>⚙️ 配置说明</h2></summary>
 
 编辑 `config.yaml`：
 
@@ -471,9 +484,12 @@ node_ip = os.environ.get('NODE_IP', 'unknown')
 print(f"Running on {node_ip}")
 ```
 
+</details>
+
 ---
 
-## 📂 项目结构
+<details>
+<summary><h2>📂 项目结构</h2></summary>
 
 ```
 npu-tools/
@@ -510,9 +526,12 @@ Channel → Service → Driver → Config
 
 严格单向依赖，不允许反向调用。
 
+</details>
+
 ---
 
-## 🧭 典型工作流
+<details>
+<summary><h2>🧭 典型工作流</h2></summary>
 
 ### 一键智能部署（最常用）
 
@@ -562,6 +581,8 @@ Channel → Service → Driver → Config
   → 对话: "查看日志"     → MCP get_script_log
   → 对话: "停止监控"     → MCP stop_file_watcher
 ```
+
+</details>
 
 ---
 
