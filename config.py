@@ -41,7 +41,10 @@ def get_deploy_config():
 
 def get_deploy_nodes():
     deploy = get_deploy_config()
-    return deploy.get('deploy_nodes', [])
+    nodes = deploy.get('deploy_nodes', None)
+    if nodes:
+        return nodes
+    return [s['host'] for s in get_servers()]
 
 
 def get_remote_dir():

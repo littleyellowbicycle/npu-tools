@@ -83,9 +83,7 @@ feishu:
 
 script_deploy:
   remote_dir: "/opt/npu-tools"
-  deploy_nodes:
-    - "192.168.25.212"
-    - "192.168.25.213"
-    - "192.168.25.214"
-    - "192.168.25.215"
+  # deploy_nodes:                          # 可选：不配置则默认使用 servers 中所有节点
+  #   - "192.168.25.212"
+  #   - "192.168.25.213"
   watch_dir: "."

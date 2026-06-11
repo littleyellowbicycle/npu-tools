@@ -746,6 +746,7 @@ def _resolve_servers(hosts=None):
         deploy_nodes = get_deploy_nodes()
         if deploy_nodes:
             return filter_servers(deploy_nodes)
+        return filter_servers()
     return filter_servers(hosts)
 
 
