@@ -151,6 +151,8 @@ python channel/cli.py query
 # 一键智能部署（选节点 + Docker + 同步 + 启动）
 python channel/cli.py deploy train.py
 python channel/cli.py deploy train.py --count 2 --min-idle 4 --args "--epochs 100"
+python channel/cli.py deploy train.py --hosts 192.168.25.212 192.168.25.213
+python channel/cli.py deploy train.py --container my-container
 
 # 自动选择空闲节点部署（不含 Docker）
 python channel/cli.py auto train.py --count 4
@@ -292,7 +294,7 @@ cwd = "d:/project/npu-tools"
 
 | 工具 | 说明 |
 |------|------|
-| `smart_deploy` | **【推荐】** 一键智能部署：选节点 → Docker → 同步 → 启动 |
+| `smart_deploy` | **【推荐】** 一键智能部署：选节点 → Docker → 同步 → 启动（支持 `hosts` 指定节点、`container` 覆盖容器名） |
 | `auto_deploy` | 自动选择空闲节点部署（不含 Docker） |
 | `query_npu_status` | 查询 NPU 状态（空闲/占用卡） |
 | `launch_script` | 后台启动脚本（nohup），返回 PID 和日志路径 |
@@ -316,7 +318,9 @@ cwd = "d:/project/npu-tools"
 
 - "帮我找 4 台空闲机器部署 train.py" → `smart_deploy` 一键完成
 - "找 2 台至少 4 卡空闲的机器跑 train.py --epochs 100" → `smart_deploy(count=2, min_idle_cards=4)`
-- "部署脚本到 212-215" → `smart_deploy` 自动处理 Docker + 同步 + 启动
+- "在 212 和 213 上部署 train.py" → `smart_deploy(hosts=["192.168.25.212", "192.168.25.213"])`
+- "在 docker my-container 中执行 train.py" → `smart_deploy(container="my-container")`
+- "在 212 的 docker test 中跑 train.py" → `smart_deploy(hosts=["192.168.25.212"], container="test")`
 
 **查询与监控：**
 
@@ -489,6 +493,18 @@ Channel → Service → Driver → Config
   → 自动: 查询状态 → 选4台空闲节点 → 创建Docker → 同步脚本 → 启动脚本
   → 返回: 选中节点、PID、日志路径
   → 对话: "查看日志" → MCP get_script_log
+```
+
+### 指定节点和容器部署
+
+```
+对话: "在 212 和 213 的 docker sglang 中执行 train.py"
+  → MCP smart_deploy(hosts=["192.168.25.212", "192.168.25.213"], container="sglang")
+  → 跳过自动选择，直接在指定节点的指定容器中部署
+
+对话: "在 docker my-test 中跑 train.py"
+  → MCP smart_deploy(container="my-test")
+  → 自动选择空闲节点，但覆盖容器名为 my-test
 ```
 
 ### 精细控制部署
