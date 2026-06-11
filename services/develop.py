@@ -59,12 +59,15 @@ def launch_script(script_path, hosts=None, args=None, remote_dir=None):
 
         docker = get_docker_config(server)
         if docker and docker.get('container'):
-            workdir = docker.get('workdir', remote_dir)
-            container_script = os.path.join(workdir, script_name).replace('\\', '/')
-            container_log_dir = os.path.join(workdir, LOG_DIR_NAME).replace('\\', '/')
+            if remote_dir != get_remote_dir():
+                container_workdir = remote_dir
+            else:
+                container_workdir = docker.get('workdir', remote_dir)
+            container_script = os.path.join(container_workdir, script_name).replace('\\', '/')
+            container_log_dir = os.path.join(container_workdir, LOG_DIR_NAME).replace('\\', '/')
             container_log = os.path.join(container_log_dir, f"{os.path.splitext(script_name)[0]}_{host_ip}_{timestamp}.log").replace('\\', '/')
 
-            mkdir_cmd = f"mkdir -p {log_dir}"
+            mkdir_cmd = f"mkdir -p {log_dir} && mkdir -p {remote_dir}"
             r = exec_command(server, mkdir_cmd, 10)
             if not r['success']:
                 r['script'] = script_name
@@ -74,7 +77,8 @@ def launch_script(script_path, hosts=None, args=None, remote_dir=None):
                 r['error'] = f"创建日志目录失败: {r.get('error', '')}"
                 return r
 
-            inner_cmd = f"mkdir -p {container_log_dir} && nohup python3 {container_script}"
+            env_prefix = f"NODE_IP={server['host']} HOST_IP={server['host']}"
+            inner_cmd = f"mkdir -p {container_log_dir} && {env_prefix} nohup python3 {container_script}"
             if args:
                 inner_cmd += f' {args}'
             inner_cmd += f' > {container_log} 2>&1 & echo $!'
@@ -82,7 +86,8 @@ def launch_script(script_path, hosts=None, args=None, remote_dir=None):
             command = f"docker exec {docker['container']} bash -c '{inner_cmd}'"
             r = exec_command(server, command, 15)
         else:
-            command = f'mkdir -p {log_dir} && nohup python3 {remote_script_path}'
+            env_prefix = f"NODE_IP={server['host']} HOST_IP={server['host']}"
+            command = f'mkdir -p {log_dir} && {env_prefix} nohup python3 {remote_script_path}'
             if args:
                 command += f' {args}'
             command += f' > {log_file} 2>&1 & echo $!'

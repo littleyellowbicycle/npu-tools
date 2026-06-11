@@ -443,6 +443,34 @@ script_deploy:
 
 **关键**：`volumes` 中必须将宿主机 `remote_dir`（如 `/opt/npu-tools`）映射到容器 `workdir`（如 `/root/ott13`），这样同步到宿主机的文件才能在容器内访问。
 
+### 路径优先级
+
+脚本上传和执行路径遵循以下优先级：
+
+| 场景 | 上传路径（宿主机） | 执行路径（容器内） |
+|------|---------------------|---------------------|
+| 默认 | `remote_dir`（如 `/opt/npu-tools`） | `workdir`（如 `/root/ott13`） |
+| 指定 `--remote-dir` | 用户指定路径（如 `/data/scripts`） | 同上传路径（`/data/scripts`） |
+| 无 Docker | `remote_dir` | 同上传路径 |
+
+> **注意**：使用 `--remote-dir` 时，确保该路径已在 Docker `volumes` 中挂载（如 `-v /data:/data`），否则容器内无法访问。
+
+### 自动注入环境变量
+
+启动脚本时自动注入以下环境变量，脚本可通过 `os.environ` 获取：
+
+| 变量 | 值 | 用途 |
+|------|----|------|
+| `NODE_IP` | 当前节点 IP（如 `192.168.25.212`） | 脚本中获取本机 IP，无需硬编码 |
+| `HOST_IP` | 同 `NODE_IP` | 兼容别名 |
+
+```python
+# train.py 中使用
+import os
+node_ip = os.environ.get('NODE_IP', 'unknown')
+print(f"Running on {node_ip}")
+```
+
 ---
 
 ## 📂 项目结构
