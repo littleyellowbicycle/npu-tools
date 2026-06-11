@@ -9,7 +9,7 @@ import asyncio
 from typing import Any
 
 from mcp.server.models import InitializationOptions
-from mcp.server import Server
+from mcp.server import Server, NotificationOptions
 from mcp.server.stdio import stdio_server
 from mcp.types import Tool, TextContent
 
@@ -698,6 +698,10 @@ async def _main():
             InitializationOptions(
                 server_name="npu-tools",
                 server_version="1.0.0",
+                capabilities=server.get_capabilities(
+                    notification_options=NotificationOptions(tools_changed=True),
+                    experimental_capabilities={},
+                ),
             ),
         )
 
