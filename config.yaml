@@ -1,4 +1,4 @@
-﻿servers:
+servers:
   - host: "192.168.25.212"
     port: 22
     username: "root"
@@ -31,3 +31,12 @@
 feishu:
   app_id: "YOUR_FEISHU_APP_ID"
   app_secret: "YOUR_FEISHU_APP_SECRET"
+
+script_deploy:
+  remote_dir: "/opt/npu-tools"
+  deploy_nodes:
+    - "192.168.25.212"
+    - "192.168.25.213"
+    - "192.168.25.214"
+    - "192.168.25.215"
+  watch_dir: "."
